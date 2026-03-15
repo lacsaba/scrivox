@@ -46,7 +46,7 @@ export default function App() {
           <StatusBadge phase={phase} />
         </Stack>
 
-        <AudioUploader onFile={setFile} disabled={isActive} />
+        <AudioUploader onFile={setFile} disabled={isActive} selectedName={file?.name ?? null} />
         <ModelSelector value={model} onChange={setModel} disabled={isActive} />
 
         <Stack direction="row" spacing={1.25}>

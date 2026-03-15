@@ -1,4 +1,4 @@
-import { useRef, useState, DragEvent, ChangeEvent } from 'react'
+import { useRef, DragEvent, ChangeEvent, useState } from 'react'
 import { Typography } from '@mui/material'
 import { AudioFile } from '@mui/icons-material'
 import styled from '@emotion/styled'
@@ -24,16 +24,15 @@ const DropZone = styled.div<DropZoneProps>`
 interface Props {
   onFile: (file: File) => void
   disabled?: boolean
+  selectedName?: string | null
 }
 
-export function AudioUploader({ onFile, disabled }: Props) {
+export function AudioUploader({ onFile, disabled, selectedName }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
   const dragCounterRef = useRef(0)
 
   const handleFile = (file: File) => {
-    setSelected(file.name)
     onFile(file)
   }
 
@@ -87,9 +86,9 @@ export function AudioUploader({ onFile, disabled }: Props) {
         disabled={disabled}
       />
       <AudioFile sx={{ fontSize: 48, color: 'action.active', mb: 1 }} />
-      {selected ? (
+      {selectedName ? (
         <Typography variant="body2" fontWeight={600}>
-          {selected}
+          {selectedName}
         </Typography>
       ) : (
         <>
