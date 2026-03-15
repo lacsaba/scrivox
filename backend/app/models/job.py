@@ -7,8 +7,16 @@ from pydantic import BaseModel
 class JobStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
+    DIARIZING = "diarizing"
     DONE = "done"
     ERROR = "error"
+
+
+class Segment(BaseModel):
+    speaker: int
+    text: str
+    start: float
+    end: float
 
 
 class JobResult(BaseModel):
@@ -20,3 +28,6 @@ class JobResult(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
+    segments: Optional[list[Segment]] = None
+    diarize_requested: bool = False
+    diarize_error: Optional[str] = None

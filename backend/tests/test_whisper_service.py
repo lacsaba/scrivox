@@ -97,7 +97,11 @@ class TestTranscribeToQueue:
 
         assert len(segment_items) == 2
         assert segment_items[0][1] == "Hello world"
+        assert segment_items[0][3] == 0.0  # start
+        assert segment_items[0][4] == 1.5  # end
         assert segment_items[1][1] == "This is a test"
+        assert segment_items[1][3] == 1.6  # start
+        assert segment_items[1][4] == 3.0  # end
         assert len(done_items) == 1
         assert done_items[0][1] == 3.0
 

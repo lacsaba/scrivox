@@ -65,3 +65,22 @@ def sample_job() -> JobResult:
 def sample_audio_bytes() -> bytes:
     """Minimal valid bytes to simulate an audio upload (content doesn't matter for mocked whisper)."""
     return b"\x00" * 1024
+
+
+@pytest.fixture
+def _patch_resemblyzer():
+    """Patch diarize_segments in the router so no real encoder is loaded."""
+    def fake_diarize(file_path, segments, num_speakers=None):
+        result = []
+        for i, seg in enumerate(segments):
+            speaker = (i % (num_speakers or 2)) + 1
+            result.append({
+                "speaker": speaker,
+                "text": seg["text"],
+                "start": seg["start"],
+                "end": seg["end"],
+            })
+        return result
+
+    with patch("app.routers.transcription.diarize_segments", side_effect=fake_diarize) as mock_diarize:
+        yield mock_diarize

@@ -12,6 +12,20 @@ import { submitTranscription, getJob } from '../../src/api/transcriptionApi'
 const mockSubmit = vi.mocked(submitTranscription)
 const mockGetJob = vi.mocked(getJob)
 
+const baseJob = {
+  job_id: 'j1',
+  status: 'pending' as const,
+  transcript: null,
+  error: null,
+  model_used: null,
+  created_at: '2025-01-01T00:00:00Z',
+  completed_at: null,
+  duration_seconds: null,
+  segments: null,
+  diarize_requested: false,
+  diarize_error: null,
+}
+
 describe('useTranscription', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -30,17 +44,7 @@ describe('useTranscription', () => {
   })
 
   it('transitions to uploading then polling on transcribe', async () => {
-    const mockJob = {
-      job_id: 'j1',
-      status: 'pending' as const,
-      transcript: null,
-      error: null,
-      model_used: null,
-      created_at: '2025-01-01T00:00:00Z',
-      completed_at: null,
-      duration_seconds: null,
-    }
-    mockSubmit.mockResolvedValue(mockJob)
+    mockSubmit.mockResolvedValue(baseJob)
 
     const { result } = renderHook(() => useTranscription())
 
@@ -50,9 +54,22 @@ describe('useTranscription', () => {
       await result.current.transcribe(file, 'base')
     })
 
-    expect(mockSubmit).toHaveBeenCalledWith(file, 'base')
+    expect(mockSubmit).toHaveBeenCalledWith(file, 'base', false, undefined)
     expect(result.current.phase).toBe('polling')
-    expect(result.current.job).toEqual(mockJob)
+    expect(result.current.job).toEqual(baseJob)
+  })
+
+  it('passes diarize and numSpeakers to submitTranscription', async () => {
+    mockSubmit.mockResolvedValue({ ...baseJob, diarize_requested: true })
+
+    const { result } = renderHook(() => useTranscription())
+    const file = new File(['audio'], 'test.wav')
+
+    await act(async () => {
+      await result.current.transcribe(file, 'base', true, 3)
+    })
+
+    expect(mockSubmit).toHaveBeenCalledWith(file, 'base', true, 3)
   })
 
   it('sets error phase when upload fails', async () => {
@@ -70,18 +87,8 @@ describe('useTranscription', () => {
   })
 
   it('polls until job is done', async () => {
-    const pendingJob = {
-      job_id: 'j1',
-      status: 'pending' as const,
-      transcript: null,
-      error: null,
-      model_used: null,
-      created_at: '2025-01-01T00:00:00Z',
-      completed_at: null,
-      duration_seconds: null,
-    }
     const doneJob = {
-      ...pendingJob,
+      ...baseJob,
       status: 'done' as const,
       transcript: 'Hello world',
       model_used: 'base',
@@ -89,8 +96,8 @@ describe('useTranscription', () => {
       duration_seconds: 3.0,
     }
 
-    mockSubmit.mockResolvedValue(pendingJob)
-    mockGetJob.mockResolvedValueOnce({ ...pendingJob, status: 'processing' })
+    mockSubmit.mockResolvedValue(baseJob)
+    mockGetJob.mockResolvedValueOnce({ ...baseJob, status: 'processing' })
     mockGetJob.mockResolvedValueOnce(doneJob)
 
     const { result } = renderHook(() => useTranscription())
@@ -116,24 +123,37 @@ describe('useTranscription', () => {
     expect(result.current.job?.transcript).toBe('Hello world')
   })
 
+  it('transitions to diarizing phase when status is diarizing', async () => {
+    mockSubmit.mockResolvedValue({ ...baseJob, diarize_requested: true })
+    mockGetJob.mockResolvedValueOnce({
+      ...baseJob,
+      status: 'diarizing',
+      transcript: 'Hello world',
+      diarize_requested: true,
+    })
+
+    const { result } = renderHook(() => useTranscription())
+    const file = new File(['audio'], 'test.wav')
+
+    await act(async () => {
+      await result.current.transcribe(file, 'base', true)
+    })
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+    })
+
+    expect(result.current.phase).toBe('diarizing')
+  })
+
   it('sets error phase when job status is error', async () => {
-    const pendingJob = {
-      job_id: 'j1',
-      status: 'pending' as const,
-      transcript: null,
-      error: null,
-      model_used: null,
-      created_at: '2025-01-01T00:00:00Z',
-      completed_at: null,
-      duration_seconds: null,
-    }
     const errorJob = {
-      ...pendingJob,
+      ...baseJob,
       status: 'error' as const,
       error: 'Transcription failed',
     }
 
-    mockSubmit.mockResolvedValue(pendingJob)
+    mockSubmit.mockResolvedValue(baseJob)
     mockGetJob.mockResolvedValueOnce(errorJob)
 
     const { result } = renderHook(() => useTranscription())
@@ -152,18 +172,7 @@ describe('useTranscription', () => {
   })
 
   it('sets error phase when polling throws', async () => {
-    const pendingJob = {
-      job_id: 'j1',
-      status: 'pending' as const,
-      transcript: null,
-      error: null,
-      model_used: null,
-      created_at: '2025-01-01T00:00:00Z',
-      completed_at: null,
-      duration_seconds: null,
-    }
-
-    mockSubmit.mockResolvedValue(pendingJob)
+    mockSubmit.mockResolvedValue(baseJob)
     mockGetJob.mockRejectedValueOnce(new Error('Request timed out'))
 
     const { result } = renderHook(() => useTranscription())
@@ -182,17 +191,7 @@ describe('useTranscription', () => {
   })
 
   it('reset returns to idle', async () => {
-    const mockJob = {
-      job_id: 'j1',
-      status: 'pending' as const,
-      transcript: null,
-      error: null,
-      model_used: null,
-      created_at: '2025-01-01T00:00:00Z',
-      completed_at: null,
-      duration_seconds: null,
-    }
-    mockSubmit.mockResolvedValue(mockJob)
+    mockSubmit.mockResolvedValue(baseJob)
 
     const { result } = renderHook(() => useTranscription())
     const file = new File(['audio'], 'test.wav')

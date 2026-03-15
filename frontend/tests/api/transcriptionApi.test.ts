@@ -33,6 +33,35 @@ describe('submitTranscription', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
+  it('appends diarize and num_speakers to form data', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ job_id: 'j1', status: 'pending' }),
+    })
+
+    const file = new File(['audio'], 'test.wav')
+    await submitTranscription(file, 'base', true, 3)
+
+    const [, init] = mockFetch.mock.calls[0]
+    const formData = init.body as FormData
+    expect(formData.get('diarize')).toBe('true')
+    expect(formData.get('num_speakers')).toBe('3')
+  })
+
+  it('does not append diarize when false', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ job_id: 'j1', status: 'pending' }),
+    })
+
+    const file = new File(['audio'], 'test.wav')
+    await submitTranscription(file, 'base', false)
+
+    const [, init] = mockFetch.mock.calls[0]
+    const formData = init.body as FormData
+    expect(formData.get('diarize')).toBeNull()
+  })
+
   it('throws on non-ok response with detail', async () => {
     mockFetch.mockResolvedValue({
       ok: false,

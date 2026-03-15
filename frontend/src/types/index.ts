@@ -1,4 +1,11 @@
-export type JobStatus = 'pending' | 'processing' | 'done' | 'error'
+export type JobStatus = 'pending' | 'processing' | 'diarizing' | 'done' | 'error'
+
+export interface Segment {
+  speaker: number
+  text: string
+  start: number
+  end: number
+}
 
 export interface JobResult {
   job_id: string
@@ -9,8 +16,11 @@ export interface JobResult {
   created_at: string
   completed_at: string | null
   duration_seconds: number | null
+  segments: Segment[] | null
+  diarize_requested: boolean
+  diarize_error: string | null
 }
 
-export type TranscriptionPhase = 'idle' | 'uploading' | 'polling' | 'done' | 'error'
+export type TranscriptionPhase = 'idle' | 'uploading' | 'polling' | 'diarizing' | 'done' | 'error'
 
 export type WhisperModel = 'tiny' | 'base' | 'small' | 'medium' | 'large'

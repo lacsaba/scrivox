@@ -1,5 +1,6 @@
 import asyncio
 import io
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -68,6 +69,27 @@ class TestTranscribeEndpoint:
             )
             assert response.status_code == 202, f"Extension {ext} should be accepted"
 
+    @pytest.mark.asyncio
+    async def test_upload_with_diarize_flag(self, client, sample_audio_bytes):
+        response = await client.post(
+            "/api/v1/transcribe",
+            files={"file": ("test.wav", io.BytesIO(sample_audio_bytes), "audio/wav")},
+            data={"model": "base", "diarize": "true"},
+        )
+        assert response.status_code == 202
+        body = response.json()
+        assert body["diarize_requested"] is True
+
+    @pytest.mark.asyncio
+    async def test_num_speakers_validation(self, client, sample_audio_bytes):
+        response = await client.post(
+            "/api/v1/transcribe",
+            files={"file": ("test.wav", io.BytesIO(sample_audio_bytes), "audio/wav")},
+            data={"model": "base", "diarize": "true", "num_speakers": "1"},
+        )
+        assert response.status_code == 400
+        assert "num_speakers must be at least 2" in response.json()["detail"]
+
 
 class TestGetJobEndpoint:
     @pytest.mark.asyncio
@@ -111,6 +133,56 @@ class TestGetJobEndpoint:
         assert "This is a test" in data["transcript"]
         assert data["duration_seconds"] == 3.0
         assert data["model_used"] == "base"
+
+    @pytest.mark.asyncio
+    async def test_diarization_end_to_end(self, client, _patch_resemblyzer, sample_audio_bytes):
+        create_resp = await client.post(
+            "/api/v1/transcribe",
+            files={"file": ("test.wav", io.BytesIO(sample_audio_bytes), "audio/wav")},
+            data={"model": "base", "diarize": "true", "num_speakers": "2"},
+        )
+        assert create_resp.status_code == 202
+        job_id = create_resp.json()["job_id"]
+
+        for _ in range(30):
+            await asyncio.sleep(0.1)
+            resp = await client.get(f"/api/v1/jobs/{job_id}")
+            data = resp.json()
+            if data["status"] in ("done", "error"):
+                break
+
+        assert data["status"] == "done"
+        assert data["diarize_requested"] is True
+        assert data["segments"] is not None
+        assert len(data["segments"]) == 2
+        assert "Speaker" in data["transcript"]
+
+    @pytest.mark.asyncio
+    async def test_diarization_failure_preserves_transcript(self, client, sample_audio_bytes):
+        """When diarization fails, transcript should still be available."""
+        with patch(
+            "app.routers.transcription.diarize_segments",
+            side_effect=RuntimeError("encoder crashed"),
+        ):
+            create_resp = await client.post(
+                "/api/v1/transcribe",
+                files={"file": ("test.wav", io.BytesIO(sample_audio_bytes), "audio/wav")},
+                data={"model": "base", "diarize": "true"},
+            )
+            job_id = create_resp.json()["job_id"]
+
+            for _ in range(30):
+                await asyncio.sleep(0.1)
+                resp = await client.get(f"/api/v1/jobs/{job_id}")
+                data = resp.json()
+                if data["status"] in ("done", "error"):
+                    break
+
+            assert data["status"] == "done"
+            assert "Hello world" in data["transcript"]
+            assert data["diarize_error"] is not None
+            assert "encoder crashed" in data["diarize_error"]
+            assert data["segments"] is None
 
 
 class TestTTSEndpoint:

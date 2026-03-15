@@ -8,6 +8,7 @@ describe('StatusBadge', () => {
     { phase: 'idle', label: 'Idle' },
     { phase: 'uploading', label: 'Uploading...' },
     { phase: 'polling', label: 'Processing...' },
+    { phase: 'diarizing', label: 'Identifying speakers...' },
     { phase: 'done', label: 'Done' },
     { phase: 'error', label: 'Error' },
   ]

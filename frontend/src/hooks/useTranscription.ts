@@ -8,7 +8,7 @@ interface UseTranscriptionReturn {
   phase: TranscriptionPhase
   job: JobResult | null
   errorMsg: string | null
-  transcribe: (file: File, model: string) => Promise<void>
+  transcribe: (file: File, model: string, diarize?: boolean, numSpeakers?: number) => Promise<void>
   reset: () => void
 }
 
@@ -26,7 +26,7 @@ export function useTranscription(): UseTranscriptionReturn {
   }, [])
 
   const transcribe = useCallback(
-    async (file: File, model: string) => {
+    async (file: File, model: string, diarize: boolean = false, numSpeakers?: number) => {
       stopPolling()
       setPhase('uploading')
       setJob(null)
@@ -34,7 +34,7 @@ export function useTranscription(): UseTranscriptionReturn {
 
       let initialJob: JobResult
       try {
-        initialJob = await submitTranscription(file, model)
+        initialJob = await submitTranscription(file, model, diarize, numSpeakers)
       } catch (err) {
         setPhase('error')
         setErrorMsg(err instanceof Error ? err.message : 'Upload failed')
@@ -56,6 +56,8 @@ export function useTranscription(): UseTranscriptionReturn {
             stopPolling()
             setPhase('error')
             setErrorMsg(updated.error ?? 'Transcription failed')
+          } else if (updated.status === 'diarizing') {
+            setPhase('diarizing')
           }
         } catch (err) {
           stopPolling()
