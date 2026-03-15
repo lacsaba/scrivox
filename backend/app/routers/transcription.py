@@ -5,13 +5,15 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.models.job import JobResult, JobStatus
+from app.models.job import JobResult, JobStatus, Segment
 from app.storage.job_store import job_store
+from app.services.diarization_service import diarize_segments
 from app.services.whisper_service import transcribe_to_queue, PARAGRAPH_PAUSE_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,32 @@ ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".ogg", ".flac", ".webm", ".mp4", 
 _transcription_semaphore = asyncio.Semaphore(settings.max_concurrent_transcriptions)
 
 
-async def _run_transcription(job_id: str, file_path: str, model: str):
+def _build_diarized_transcript(diarized_segments: list[dict]) -> str:
+    """Rebuild transcript with 'Speaker X:' prefixes, merging consecutive same-speaker segments."""
+    if not diarized_segments:
+        return ""
+
+    parts: list[str] = []
+    current_speaker = None
+    for seg in diarized_segments:
+        if seg["speaker"] != current_speaker:
+            if parts:
+                parts.append("\n\n")
+            parts.append(f"Speaker {seg['speaker']}: {seg['text']}")
+            current_speaker = seg["speaker"]
+        else:
+            parts.append(f" {seg['text']}")
+
+    return "".join(parts)
+
+
+async def _run_transcription(
+    job_id: str,
+    file_path: str,
+    model: str,
+    diarize: bool = False,
+    num_speakers: Optional[int] = None,
+):
     async with _transcription_semaphore:
         job = await job_store.get(job_id)
         if not job:
@@ -43,6 +70,7 @@ async def _run_transcription(job_id: str, file_path: str, model: str):
             ).start()
 
             parts: list[str] = []
+            raw_segments: list[dict] = []
             while True:
                 try:
                     item = await asyncio.wait_for(
@@ -55,18 +83,44 @@ async def _run_transcription(job_id: str, file_path: str, model: str):
                     )
 
                 if item[0] == "segment":
-                    _, text, gap, _ = item
+                    _, text, gap, start, end = item
                     if parts:
                         parts.append("\n\n" if gap is not None and gap >= PARAGRAPH_PAUSE_SECONDS else " ")
                     parts.append(text)
+                    raw_segments.append({"text": text, "start": start, "end": end})
                     job.transcript = "".join(parts)
                     await job_store.update(job)
                 elif item[0] == "done":
-                    job.status = JobStatus.DONE
                     job.duration_seconds = item[1]
                     job.model_used = model
-                    job.completed_at = datetime.now(timezone.utc)
                     job.transcript = "".join(parts)
+
+                    if diarize and raw_segments:
+                        job.status = JobStatus.DIARIZING
+                        await job_store.update(job)
+                        logger.info("Diarization started: job=%s", job_id)
+
+                        try:
+                            diarized = await asyncio.to_thread(
+                                diarize_segments, file_path, raw_segments, num_speakers
+                            )
+                            job.segments = [
+                                Segment(
+                                    speaker=s["speaker"],
+                                    text=s["text"],
+                                    start=s["start"],
+                                    end=s["end"],
+                                )
+                                for s in diarized
+                            ]
+                            job.transcript = _build_diarized_transcript(diarized)
+                            logger.info("Diarization done: job=%s", job_id)
+                        except Exception as diar_err:
+                            job.diarize_error = str(diar_err)
+                            logger.error("Diarization failed: job=%s error=%s", job_id, diar_err)
+
+                    job.status = JobStatus.DONE
+                    job.completed_at = datetime.now(timezone.utc)
                     await job_store.update(job)
                     logger.info("Transcription done: job=%s", job_id)
                     break
@@ -91,11 +145,19 @@ async def transcribe(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     model: str = Form(default="base"),
+    diarize: bool = Form(default=False),
+    num_speakers: Optional[int] = Form(default=None),
 ):
     if model not in settings.allowed_whisper_models:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid model '{model}'. Allowed: {settings.allowed_whisper_models}",
+        )
+
+    if num_speakers is not None and num_speakers < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="num_speakers must be at least 2.",
         )
 
     suffix = Path(file.filename or "").suffix.lower()
@@ -125,11 +187,12 @@ async def transcribe(
         job_id=job_id,
         status=JobStatus.PENDING,
         created_at=datetime.now(timezone.utc),
+        diarize_requested=diarize,
     )
     await job_store.create(job)
 
-    logger.info("Upload received: job=%s file=%s model=%s", job_id, file.filename, model)
-    background_tasks.add_task(_run_transcription, job_id, file_path, model)
+    logger.info("Upload received: job=%s file=%s model=%s diarize=%s", job_id, file.filename, model, diarize)
+    background_tasks.add_task(_run_transcription, job_id, file_path, model, diarize, num_speakers)
 
     return JSONResponse(status_code=202, content=job.model_dump(mode="json"))
 

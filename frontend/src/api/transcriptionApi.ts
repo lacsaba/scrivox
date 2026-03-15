@@ -24,10 +24,21 @@ async function fetchWithTimeout(
   }
 }
 
-export async function submitTranscription(file: File, model: string): Promise<JobResult> {
+export async function submitTranscription(
+  file: File,
+  model: string,
+  diarize: boolean = false,
+  numSpeakers?: number,
+): Promise<JobResult> {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('model', model)
+  if (diarize) {
+    formData.append('diarize', 'true')
+  }
+  if (numSpeakers !== undefined) {
+    formData.append('num_speakers', String(numSpeakers))
+  }
 
   const response = await fetchWithTimeout(
     `${BASE_URL}/transcribe`,

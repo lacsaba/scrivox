@@ -37,7 +37,7 @@ def transcribe_to_queue(
             text = seg.text.strip()
             if text:
                 gap = seg.start - prev_end if prev_end is not None else None
-                loop.call_soon_threadsafe(queue.put_nowait, ("segment", text, gap, seg.end))
+                loop.call_soon_threadsafe(queue.put_nowait, ("segment", text, gap, seg.start, seg.end))
                 prev_end = seg.end
         loop.call_soon_threadsafe(queue.put_nowait, ("done", info.duration))
         logger.info("Transcription completed: file=%s", file_path)
@@ -60,7 +60,7 @@ class WhisperService(AudioProcessingService):
         while True:
             item = await queue.get()
             if item[0] == "segment":
-                _, text, gap, _ = item
+                _, text, gap, _start, _end = item
                 if parts:
                     parts.append("\n\n" if gap is not None and gap >= PARAGRAPH_PAUSE_SECONDS else " ")
                 parts.append(text)

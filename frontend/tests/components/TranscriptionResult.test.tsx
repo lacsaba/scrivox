@@ -14,6 +14,9 @@ function makeJob(overrides: Partial<JobResult> = {}): JobResult {
     created_at: '2025-01-01T00:00:00Z',
     completed_at: '2025-01-01T00:01:00Z',
     duration_seconds: 5.0,
+    segments: null,
+    diarize_requested: false,
+    diarize_error: null,
     ...overrides,
   }
 }
@@ -102,5 +105,51 @@ describe('TranscriptionResult', () => {
 
     expect(screen.queryByText(/model/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/audio duration/i)).not.toBeInTheDocument()
+  })
+
+  it('renders speaker view when segments are present', () => {
+    const job = makeJob({
+      transcript: 'Speaker 1: Hello\n\nSpeaker 2: Hi there',
+      segments: [
+        { speaker: 1, text: 'Hello', start: 0.0, end: 1.5 },
+        { speaker: 2, text: 'Hi there', start: 1.5, end: 3.0 },
+      ],
+    })
+    render(<TranscriptionResult job={job} />)
+
+    expect(screen.getByText('Speaker 1:')).toBeInTheDocument()
+    expect(screen.getByText('Hello')).toBeInTheDocument()
+    expect(screen.getByText('Speaker 2:')).toBeInTheDocument()
+    expect(screen.getByText('Hi there')).toBeInTheDocument()
+    // Should not show a textarea when segments are present
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('shows diarize_error as warning alert', () => {
+    const job = makeJob({
+      diarize_requested: true,
+      diarize_error: 'Encoder failed',
+    })
+    render(<TranscriptionResult job={job} />)
+
+    expect(screen.getByText(/Speaker identification failed/)).toBeInTheDocument()
+    expect(screen.getByText(/Encoder failed/)).toBeInTheDocument()
+  })
+
+  it('groups consecutive same-speaker segments in speaker view', () => {
+    const job = makeJob({
+      transcript: 'Speaker 1: Hello Good morning',
+      segments: [
+        { speaker: 1, text: 'Hello', start: 0.0, end: 1.0 },
+        { speaker: 1, text: 'Good morning', start: 1.0, end: 2.5 },
+      ],
+    })
+    render(<TranscriptionResult job={job} />)
+
+    // Should only have one "Speaker 1:" label
+    const labels = screen.getAllByText('Speaker 1:')
+    expect(labels).toHaveLength(1)
+    // Combined text
+    expect(screen.getByText('Hello Good morning')).toBeInTheDocument()
   })
 })

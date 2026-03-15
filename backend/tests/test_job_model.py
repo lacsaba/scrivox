@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 
-from app.models.job import JobResult, JobStatus
+from app.models.job import JobResult, JobStatus, Segment
 
 
 class TestJobStatus:
     def test_status_values(self):
         assert JobStatus.PENDING == "pending"
         assert JobStatus.PROCESSING == "processing"
+        assert JobStatus.DIARIZING == "diarizing"
         assert JobStatus.DONE == "done"
         assert JobStatus.ERROR == "error"
 
@@ -25,6 +26,9 @@ class TestJobResult:
         assert job.model_used is None
         assert job.completed_at is None
         assert job.duration_seconds is None
+        assert job.segments is None
+        assert job.diarize_requested is False
+        assert job.diarize_error is None
 
     def test_full_creation(self):
         now = datetime.now(timezone.utc)
@@ -60,5 +64,36 @@ class TestJobResult:
         )
         job.status = JobStatus.PROCESSING
         assert job.status == JobStatus.PROCESSING
+        job.status = JobStatus.DIARIZING
+        assert job.status == JobStatus.DIARIZING
         job.status = JobStatus.DONE
         assert job.status == JobStatus.DONE
+
+    def test_segments_field(self):
+        seg = Segment(speaker=1, text="Hello", start=0.0, end=1.5)
+        job = JobResult(
+            job_id="s",
+            status=JobStatus.DONE,
+            created_at=datetime.now(timezone.utc),
+            segments=[seg],
+        )
+        assert len(job.segments) == 1
+        assert job.segments[0].speaker == 1
+        assert job.segments[0].text == "Hello"
+
+        d = job.model_dump(mode="json")
+        assert d["segments"][0]["speaker"] == 1
+        assert d["segments"][0]["start"] == 0.0
+
+    def test_diarize_error_field(self):
+        job = JobResult(
+            job_id="e",
+            status=JobStatus.DONE,
+            created_at=datetime.now(timezone.utc),
+            diarize_requested=True,
+            diarize_error="Encoder failed",
+        )
+        assert job.diarize_error == "Encoder failed"
+        d = job.model_dump(mode="json")
+        assert d["diarize_error"] == "Encoder failed"
+        assert d["diarize_requested"] is True
