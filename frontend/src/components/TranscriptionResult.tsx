@@ -1,12 +1,20 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { JobResult } from '../types'
 
 interface Props {
   job: JobResult
+  streaming?: boolean
 }
 
-export function TranscriptionResult({ job }: Props) {
+export function TranscriptionResult({ job, streaming }: Props) {
   const [copied, setCopied] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (streaming && textareaRef.current) {
+      textareaRef.current.scrollTo({ top: textareaRef.current.scrollHeight, behavior: 'smooth' })
+    }
+  }, [job.transcript, streaming])
 
   const handleCopy = async () => {
     if (!job.transcript) return
@@ -35,6 +43,7 @@ export function TranscriptionResult({ job }: Props) {
         </button>
       </div>
       <textarea
+        ref={textareaRef}
         readOnly
         value={job.transcript ?? ''}
         style={{

@@ -101,7 +101,7 @@ export default function App() {
         )}
 
         {(phase === 'done' || phase === 'polling') && job && job.transcript && (
-          <TranscriptionResult job={job} />
+          <TranscriptionResult job={job} streaming={phase === 'polling'} />
         )}
 
         {phase === 'polling' && job && !job.transcript && (
