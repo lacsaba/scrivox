@@ -46,18 +46,25 @@ npm run dev
 npm run build   # tsc + vite build
 ```
 
+Run tests:
+```bash
+cd frontend
+npm test          # single run
+npm run test:watch  # watch mode
+```
+
 ## Architecture
 
 ### Backend (`backend/app/`)
 
 - **`main.py`** — FastAPI app with CORS middleware and a lifespan hook that preloads the default Whisper model on startup. Mounts two routers under `/api/v1`.
-- **`config.py`** — `pydantic_settings`-based `Settings` class; reads from `.env` with `extra: "ignore"` so non-app env vars (like `HF_HUB_DISABLE_SYMLINKS_WARNING`) don't cause validation errors.
-- **`routers/transcription.py`** — `POST /transcribe` validates the file and model, writes the upload to `uploads/`, creates a `JobResult` in `job_store`, then schedules `_run_transcription` as a FastAPI `BackgroundTask`. The background task streams segments via an `asyncio.Queue`, updating `job.transcript` incrementally so the frontend can show partial results. `GET /jobs/{job_id}` returns current job state.
+- **`config.py`** — `pydantic_settings`-based `Settings` class; reads from `.env` with `extra: "ignore"` so non-app env vars (like `HF_HUB_DISABLE_SYMLINKS_WARNING`) don't cause validation errors. Includes `queue_get_timeout_seconds` (600), `job_ttl_minutes` (60), and `max_concurrent_transcriptions` (2).
+- **`routers/transcription.py`** — `POST /transcribe` validates the file and model, writes the upload to `uploads/`, creates a `JobResult` in `job_store`, then schedules `_run_transcription` as a FastAPI `BackgroundTask`. The background task is gated by an `asyncio.Semaphore` (max 2 concurrent), streams segments via an `asyncio.Queue` with per-segment timeout, updating `job.transcript` incrementally. `GET /jobs/{job_id}` returns current job state.
 - **`routers/tts.py`** — Stub router returning 501; TTS is not implemented.
-- **`services/whisper_service.py`** — `transcribe_to_queue()` runs Whisper in a daemon thread, pushing `("segment", text, gap, end)` tuples into an `asyncio.Queue` via `loop.call_soon_threadsafe`. Paragraphs are detected by gaps ≥ `PARAGRAPH_PAUSE_SECONDS` (1.5s) between segments. Models are cached in `_model_cache`; device is always CPU with int8 compute.
+- **`services/whisper_service.py`** — `transcribe_to_queue()` runs Whisper in a daemon thread, pushing `("segment", text, gap, end)` tuples into an `asyncio.Queue` via `loop.call_soon_threadsafe`. Paragraphs are detected by gaps ≥ `PARAGRAPH_PAUSE_SECONDS` (1.5s) between segments. Models are cached in `_model_cache` behind a `threading.Lock`; device is always CPU with int8 compute.
 - **`services/base_service.py`** — Abstract `AudioProcessingService` base class with a single `process(file_path, **kwargs) -> dict` method.
 - **`models/job.py`** — Pydantic `JobResult` model with `JobStatus` enum (`pending → processing → done/error`).
-- **`storage/job_store.py`** — In-memory `JobStore` (dict + `asyncio.Lock`). Jobs are lost on server restart.
+- **`storage/job_store.py`** — In-memory `JobStore` (dict + `asyncio.Lock`). Jobs are lost on server restart. TTL-based cleanup removes completed/errored jobs older than `job_ttl_minutes` on each `create()` call.
 
 ### Frontend (`frontend/src/`)
 
@@ -65,7 +72,7 @@ Uses **Material UI** for components and **Emotion** (`@emotion/styled`) for cust
 
 - **`App.tsx`** — Root component using MUI `Paper`, `Box`, `Stack`, `Button`, `Typography`. Holds `file` and `model` state; delegates transcription lifecycle to `useTranscription`.
 - **`hooks/useTranscription.ts`** — Core hook managing `TranscriptionPhase` (`idle → uploading → polling → done/error`). Uploads the file, then polls `GET /jobs/{id}` every 2 seconds until done or error.
-- **`api/transcriptionApi.ts`** — Two fetch helpers: `submitTranscription` (multipart POST) and `getJob`. Base URL comes from `VITE_API_URL` env var, defaulting to `http://localhost:8000/api/v1`.
+- **`api/transcriptionApi.ts`** — Two fetch helpers: `submitTranscription` (multipart POST, 120s timeout) and `getJob` (10s timeout). Uses `AbortController`-based `fetchWithTimeout` wrapper. Base URL comes from `VITE_API_URL` env var, defaulting to `http://localhost:8000/api/v1`.
 - **`types/index.ts`** — Shared TypeScript types (`JobResult`, `JobStatus`, `TranscriptionPhase`, `WhisperModel`). These mirror the backend Pydantic model field names exactly (snake_case).
 - **Components:**
   - `AudioUploader` — Emotion `styled` drop zone with MUI `AudioFile` icon
@@ -81,3 +88,8 @@ Uses **Material UI** for components and **Emotion** (`@emotion/styled`) for cust
 - **Paragraph detection** — gaps ≥ 1.5s between Whisper segments insert `\n\n` paragraph breaks.
 - **Model caching** — loaded Whisper models are reused across requests via `_model_cache`; the default model is eagerly loaded at startup.
 - **TTS is a planned feature** — `routers/tts.py` and `services/tts_service.py` are stubs returning 501/NotImplementedError.
+
+### Testing
+
+- **Backend** (`backend/tests/`): pytest + pytest-asyncio + httpx. Whisper is mocked via `conftest.py` fixtures. Tests cover config, job model, job store (CRUD + TTL cleanup), transcription router (upload validation, job lifecycle, end-to-end with mocked Whisper), whisper service (caching, thread safety, segment streaming, error handling), and TTS stub.
+- **Frontend** (`frontend/src/**/*.test.{ts,tsx}`): vitest + @testing-library/react + jsdom. `@mui/icons-material` is globally mocked in `src/test/setup.ts` to avoid EMFILE on Windows. Tests cover API layer (fetch timeout, error mapping), all components (AudioUploader drag counter, TranscriptionResult typewriter + copy, ModelSelector, StatusBadge, ErrorBanner), and the useTranscription hook (upload, polling, error, reset lifecycle).
