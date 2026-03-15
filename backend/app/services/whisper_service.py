@@ -12,12 +12,27 @@ def _load_model(model_name: str):
     return _model_cache[model_name]
 
 
+PARAGRAPH_PAUSE_SECONDS = 1.5
+
+
 def _transcribe(file_path: str, model_name: str) -> dict:
     model = _load_model(model_name)
     segments, info = model.transcribe(file_path)
-    transcript = " ".join(segment.text.strip() for segment in segments)
+    segments = list(segments)
+
+    parts: list[str] = []
+    for i, seg in enumerate(segments):
+        text = seg.text.strip()
+        if not text:
+            continue
+        if parts and i > 0:
+            gap = seg.start - segments[i - 1].end
+            separator = "\n\n" if gap >= PARAGRAPH_PAUSE_SECONDS else " "
+            parts.append(separator)
+        parts.append(text)
+
     return {
-        "transcript": transcript,
+        "transcript": "".join(parts),
         "duration_seconds": info.duration,
     }
 
