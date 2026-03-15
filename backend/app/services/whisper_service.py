@@ -1,17 +1,24 @@
 import asyncio
+import logging
 import threading
 from typing import Dict, Any
 from app.services.base_service import AudioProcessingService
 
+logger = logging.getLogger(__name__)
+
 _model_cache: Dict[str, Any] = {}
+_model_lock = threading.Lock()
 PARAGRAPH_PAUSE_SECONDS = 1.5
 
 
 def _load_model(model_name: str):
     from faster_whisper import WhisperModel
-    if model_name not in _model_cache:
-        _model_cache[model_name] = WhisperModel(model_name, device="cpu", compute_type="int8")
-    return _model_cache[model_name]
+    with _model_lock:
+        if model_name not in _model_cache:
+            logger.info("Loading Whisper model '%s'...", model_name)
+            _model_cache[model_name] = WhisperModel(model_name, device="cpu", compute_type="int8")
+            logger.info("Whisper model '%s' loaded.", model_name)
+        return _model_cache[model_name]
 
 
 def transcribe_to_queue(
@@ -23,6 +30,7 @@ def transcribe_to_queue(
     """Run transcription synchronously in a thread, pushing events into an asyncio queue."""
     try:
         model = _load_model(model_name)
+        logger.info("Transcription started: file=%s model=%s", file_path, model_name)
         segments, info = model.transcribe(file_path)
         prev_end: float | None = None
         for seg in segments:
@@ -32,7 +40,9 @@ def transcribe_to_queue(
                 loop.call_soon_threadsafe(queue.put_nowait, ("segment", text, gap, seg.end))
                 prev_end = seg.end
         loop.call_soon_threadsafe(queue.put_nowait, ("done", info.duration))
+        logger.info("Transcription completed: file=%s", file_path)
     except Exception as exc:
+        logger.error("Transcription failed: file=%s error=%s", file_path, exc)
         loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
 
 

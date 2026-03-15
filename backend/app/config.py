@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     allowed_whisper_models: List[str] = ["tiny", "base", "small", "medium", "large"]
     max_upload_size_mb: int = 100
     upload_dir: str = "uploads"
+    queue_get_timeout_seconds: int = 600
+    job_ttl_minutes: int = 60
+    max_concurrent_transcriptions: int = 2
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

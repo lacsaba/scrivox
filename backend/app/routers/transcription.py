@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import threading
 import uuid
@@ -13,59 +14,76 @@ from app.models.job import JobResult, JobStatus
 from app.storage.job_store import job_store
 from app.services.whisper_service import transcribe_to_queue, PARAGRAPH_PAUSE_SECONDS
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".ogg", ".flac", ".webm", ".mp4", ".aac"}
 
+_transcription_semaphore = asyncio.Semaphore(settings.max_concurrent_transcriptions)
+
 
 async def _run_transcription(job_id: str, file_path: str, model: str):
-    job = await job_store.get(job_id)
-    if not job:
-        return
+    async with _transcription_semaphore:
+        job = await job_store.get(job_id)
+        if not job:
+            return
 
-    job.status = JobStatus.PROCESSING
-    await job_store.update(job)
-
-    try:
-        queue: asyncio.Queue = asyncio.Queue()
-        loop = asyncio.get_running_loop()
-        threading.Thread(
-            target=transcribe_to_queue,
-            args=(file_path, model, queue, loop),
-            daemon=True,
-        ).start()
-
-        parts: list[str] = []
-        while True:
-            item = await queue.get()
-            if item[0] == "segment":
-                _, text, gap, _ = item
-                if parts:
-                    parts.append("\n\n" if gap is not None and gap >= PARAGRAPH_PAUSE_SECONDS else " ")
-                parts.append(text)
-                job.transcript = "".join(parts)
-                await job_store.update(job)
-            elif item[0] == "done":
-                job.status = JobStatus.DONE
-                job.duration_seconds = item[1]
-                job.model_used = model
-                job.completed_at = datetime.now(timezone.utc)
-                job.transcript = "".join(parts)
-                await job_store.update(job)
-                break
-            else:
-                raise Exception(item[1])
-
-    except Exception as e:
-        job.status = JobStatus.ERROR
-        job.error = str(e)
-        job.completed_at = datetime.now(timezone.utc)
+        job.status = JobStatus.PROCESSING
         await job_store.update(job)
-    finally:
+        logger.info("Transcription processing: job=%s file=%s model=%s", job_id, file_path, model)
+
         try:
-            os.remove(file_path)
-        except OSError:
-            pass
+            queue: asyncio.Queue = asyncio.Queue()
+            loop = asyncio.get_running_loop()
+            threading.Thread(
+                target=transcribe_to_queue,
+                args=(file_path, model, queue, loop),
+                daemon=True,
+            ).start()
+
+            parts: list[str] = []
+            while True:
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=settings.queue_get_timeout_seconds
+                    )
+                except asyncio.TimeoutError:
+                    raise Exception(
+                        f"Transcription timed out: no segment received for "
+                        f"{settings.queue_get_timeout_seconds} seconds"
+                    )
+
+                if item[0] == "segment":
+                    _, text, gap, _ = item
+                    if parts:
+                        parts.append("\n\n" if gap is not None and gap >= PARAGRAPH_PAUSE_SECONDS else " ")
+                    parts.append(text)
+                    job.transcript = "".join(parts)
+                    await job_store.update(job)
+                elif item[0] == "done":
+                    job.status = JobStatus.DONE
+                    job.duration_seconds = item[1]
+                    job.model_used = model
+                    job.completed_at = datetime.now(timezone.utc)
+                    job.transcript = "".join(parts)
+                    await job_store.update(job)
+                    logger.info("Transcription done: job=%s", job_id)
+                    break
+                else:
+                    raise Exception(item[1])
+
+        except Exception as e:
+            job.status = JobStatus.ERROR
+            job.error = str(e)
+            job.completed_at = datetime.now(timezone.utc)
+            await job_store.update(job)
+            logger.error("Transcription error: job=%s error=%s", job_id, e)
+        finally:
+            try:
+                os.remove(file_path)
+            except OSError as e:
+                logger.warning("Failed to clean up file %s: %s", file_path, e)
 
 
 @router.post("/transcribe", status_code=202)
@@ -110,6 +128,7 @@ async def transcribe(
     )
     await job_store.create(job)
 
+    logger.info("Upload received: job=%s file=%s model=%s", job_id, file.filename, model)
     background_tasks.add_task(_run_transcription, job_id, file_path, model)
 
     return JSONResponse(status_code=202, content=job.model_dump(mode="json"))

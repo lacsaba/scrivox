@@ -17,6 +17,7 @@ export function TranscriptionResult({ job, streaming }: Props) {
   const pendingRef = useRef<string[]>([])
   const prevTranscriptRef = useRef('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Queue new tokens when transcript grows, or flush immediately when done
   useEffect(() => {
@@ -58,15 +59,23 @@ export function TranscriptionResult({ job, streaming }: Props) {
   // Auto-scroll to bottom as new tokens appear
   useEffect(() => {
     if (streaming && textareaRef.current) {
-      textareaRef.current.scrollTo({ top: textareaRef.current.scrollHeight, behavior: 'smooth' })
+      textareaRef.current.scrollTop = textareaRef.current.scrollHeight
     }
   }, [displayed, streaming])
+
+  // Clean up copy timer on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
 
   const handleCopy = async () => {
     if (!job.transcript) return
     await navigator.clipboard.writeText(job.transcript)
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
   }
 
   return (

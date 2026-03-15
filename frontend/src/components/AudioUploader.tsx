@@ -30,14 +30,33 @@ export function AudioUploader({ onFile, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const dragCounterRef = useRef(0)
 
   const handleFile = (file: File) => {
     setSelected(file.name)
     onFile(file)
   }
 
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    if (!disabled) {
+      dragCounterRef.current++
+      setDragging(true)
+    }
+  }
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragCounterRef.current--
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setDragging(false)
+    }
+  }
+
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    dragCounterRef.current = 0
     setDragging(false)
     if (disabled) return
     const file = e.dataTransfer.files[0]
@@ -52,8 +71,9 @@ export function AudioUploader({ onFile, disabled }: Props) {
   return (
     <DropZone
       onClick={() => !disabled && inputRef.current?.click()}
-      onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragging(true) }}
-      onDragLeave={() => setDragging(false)}
+      onDragOver={(e) => e.preventDefault()}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       isDragging={dragging}
       isDisabled={!!disabled}
