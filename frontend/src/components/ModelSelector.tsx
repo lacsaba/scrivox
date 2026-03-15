@@ -1,3 +1,4 @@
+import { FormControl, InputLabel, Select, MenuItem } from '@mui/material'
 import type { WhisperModel } from '../types'
 
 const MODELS: { value: WhisperModel; label: string }[] = [
@@ -16,34 +17,22 @@ interface Props {
 
 export function ModelSelector({ value, onChange, disabled }: Props) {
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <label
-        htmlFor="model-select"
-        style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px', color: '#374151' }}
-      >
-        Whisper Model
-      </label>
-      <select
+    <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+      <InputLabel id="model-select-label">Whisper Model</InputLabel>
+      <Select
+        labelId="model-select-label"
         id="model-select"
         value={value}
+        label="Whisper Model"
         onChange={(e) => onChange(e.target.value as WhisperModel)}
         disabled={disabled}
-        style={{
-          width: '100%',
-          padding: '8px 12px',
-          borderRadius: '6px',
-          border: '1px solid #d1d5db',
-          fontSize: '0.9rem',
-          backgroundColor: disabled ? '#f9fafb' : '#fff',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-        }}
       >
         {MODELS.map((m) => (
-          <option key={m.value} value={m.value}>
+          <MenuItem key={m.value} value={m.value}>
             {m.label}
-          </option>
+          </MenuItem>
         ))}
-      </select>
-    </div>
+      </Select>
+    </FormControl>
   )
 }

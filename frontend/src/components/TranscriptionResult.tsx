@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import { Box, Typography, Button, TextField, Stack } from '@mui/material'
+import { ContentCopy, Check } from '@mui/icons-material'
 import type { JobResult } from '../types'
 
 const WORD_INTERVAL_MS = 50
@@ -68,49 +70,50 @@ export function TranscriptionResult({ job, streaming }: Props) {
   }
 
   return (
-    <div style={{ marginTop: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#111827' }}>Transcript</h2>
-        <button
+    <Box mt={3}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+        <Typography variant="subtitle1" fontWeight={700}>
+          Transcript
+        </Typography>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={copied ? <Check /> : <ContentCopy />}
           onClick={handleCopy}
-          style={{
-            padding: '4px 12px',
-            borderRadius: '6px',
-            border: '1px solid #d1d5db',
-            backgroundColor: '#fff',
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-            color: '#374151',
-          }}
         >
           {copied ? 'Copied!' : 'Copy'}
-        </button>
-      </div>
-      <textarea
-        ref={textareaRef}
-        readOnly
+        </Button>
+      </Stack>
+      <TextField
+        inputRef={textareaRef}
+        multiline
+        rows={8}
+        fullWidth
         value={displayed}
-        style={{
-          width: '100%',
-          minHeight: '160px',
-          padding: '12px',
-          borderRadius: '8px',
-          border: '1px solid #d1d5db',
-          fontSize: '0.9rem',
-          lineHeight: 1.6,
-          resize: 'vertical',
-          boxSizing: 'border-box',
-          backgroundColor: '#f9fafb',
-          color: '#111827',
-          fontFamily: 'inherit',
+        slotProps={{ input: { readOnly: true } }}
+        sx={{
+          '& .MuiInputBase-inputMultiline': {
+            resize: 'vertical',
+            fontSize: '0.9rem',
+            lineHeight: 1.6,
+          },
+          '& .MuiOutlinedInput-root': {
+            bgcolor: 'grey.50',
+          },
         }}
       />
-      <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#6b7280', display: 'flex', gap: '16px' }}>
-        {job.model_used && <span>Model: <strong>{job.model_used}</strong></span>}
-        {job.duration_seconds != null && (
-          <span>Audio duration: <strong>{job.duration_seconds.toFixed(1)}s</strong></span>
+      <Stack direction="row" spacing={2} mt={1}>
+        {job.model_used && (
+          <Typography variant="caption" color="text.secondary">
+            Model: <strong>{job.model_used}</strong>
+          </Typography>
         )}
-      </div>
-    </div>
+        {job.duration_seconds != null && (
+          <Typography variant="caption" color="text.secondary">
+            Audio duration: <strong>{job.duration_seconds.toFixed(1)}s</strong>
+          </Typography>
+        )}
+      </Stack>
+    </Box>
   )
 }

@@ -1,40 +1,19 @@
+import { Chip } from '@mui/material'
 import type { TranscriptionPhase } from '../types'
+
+const CONFIG: Record<TranscriptionPhase, { label: string; color: 'default' | 'primary' | 'warning' | 'success' | 'error' }> = {
+  idle: { label: 'Idle', color: 'default' },
+  uploading: { label: 'Uploading...', color: 'primary' },
+  polling: { label: 'Processing...', color: 'warning' },
+  done: { label: 'Done', color: 'success' },
+  error: { label: 'Error', color: 'error' },
+}
 
 interface Props {
   phase: TranscriptionPhase
 }
 
-const LABELS: Record<TranscriptionPhase, string> = {
-  idle: 'Idle',
-  uploading: 'Uploading...',
-  polling: 'Processing...',
-  done: 'Done',
-  error: 'Error',
-}
-
-const COLORS: Record<TranscriptionPhase, string> = {
-  idle: '#6b7280',
-  uploading: '#3b82f6',
-  polling: '#f59e0b',
-  done: '#10b981',
-  error: '#ef4444',
-}
-
 export function StatusBadge({ phase }: Props) {
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 10px',
-        borderRadius: '9999px',
-        fontSize: '0.75rem',
-        fontWeight: 600,
-        color: '#fff',
-        backgroundColor: COLORS[phase],
-        letterSpacing: '0.03em',
-      }}
-    >
-      {LABELS[phase]}
-    </span>
-  )
+  const { label, color } = CONFIG[phase]
+  return <Chip label={label} color={color} size="small" />
 }

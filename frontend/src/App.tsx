@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Box, Paper, Button, Typography, Stack } from '@mui/material'
 import { useTranscription } from './hooks/useTranscription'
 import { AudioUploader } from './components/AudioUploader'
 import { ModelSelector } from './components/ModelSelector'
@@ -26,75 +27,45 @@ export default function App() {
   }
 
   return (
-    <div
-      style={{
+    <Box
+      sx={{
         minHeight: '100vh',
-        backgroundColor: '#f3f4f6',
+        bgcolor: 'grey.100',
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        padding: '48px 16px',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        py: 6,
+        px: 2,
       }}
     >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '640px',
-          backgroundColor: '#fff',
-          borderRadius: '12px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.05)',
-          padding: '32px',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#111827' }}>
+      <Paper elevation={2} sx={{ width: '100%', maxWidth: 640, p: 4, borderRadius: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+          <Typography variant="h5" fontWeight={800}>
             Speech to Text
-          </h1>
+          </Typography>
           <StatusBadge phase={phase} />
-        </div>
+        </Stack>
 
         <AudioUploader onFile={setFile} disabled={isActive} />
         <ModelSelector value={model} onChange={setModel} disabled={isActive} />
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
+        <Stack direction="row" spacing={1.25}>
+          <Button
+            variant="contained"
             onClick={handleTranscribe}
             disabled={!file || isActive}
-            style={{
-              flex: 1,
-              padding: '10px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: !file || isActive ? '#e5e7eb' : '#3b82f6',
-              color: !file || isActive ? '#9ca3af' : '#fff',
-              fontWeight: 700,
-              fontSize: '0.95rem',
-              cursor: !file || isActive ? 'not-allowed' : 'pointer',
-              transition: 'background-color 0.15s',
-            }}
+            fullWidth
+            sx={{ fontWeight: 700 }}
           >
             {phase === 'uploading' ? 'Uploading...' : phase === 'polling' ? 'Transcribing...' : 'Transcribe'}
-          </button>
+          </Button>
 
           {(phase === 'done' || phase === 'error') && (
-            <button
-              onClick={handleReset}
-              style={{
-                padding: '10px 20px',
-                borderRadius: '8px',
-                border: '1px solid #d1d5db',
-                backgroundColor: '#fff',
-                color: '#374151',
-                fontWeight: 600,
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-              }}
-            >
+            <Button variant="outlined" onClick={handleReset} sx={{ fontWeight: 600 }}>
               Start Over
-            </button>
+            </Button>
           )}
-        </div>
+        </Stack>
 
         {errorMsg && phase === 'error' && (
           <ErrorBanner message={errorMsg} onDismiss={handleReset} />
@@ -105,11 +76,11 @@ export default function App() {
         )}
 
         {phase === 'polling' && job && !job.transcript && (
-          <p style={{ textAlign: 'center', color: '#6b7280', marginTop: '20px', fontSize: '0.9rem' }}>
+          <Typography color="text.secondary" textAlign="center" mt={2.5} fontSize="0.9rem">
             Transcribing audio... this may take a moment.
-          </p>
+          </Typography>
         )}
-      </div>
-    </div>
+      </Paper>
+    </Box>
   )
 }

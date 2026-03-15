@@ -1,6 +1,25 @@
 import { useRef, useState, DragEvent, ChangeEvent } from 'react'
+import { Typography } from '@mui/material'
+import { AudioFile } from '@mui/icons-material'
+import styled from '@emotion/styled'
 
 const ACCEPT = '.m4a,.wav,.mp3,.ogg,.flac,.webm,.mp4,.aac'
+
+interface DropZoneProps {
+  isDragging: boolean
+  isDisabled: boolean
+}
+
+const DropZone = styled.div<DropZoneProps>`
+  border: 2px dashed ${({ isDragging }) => (isDragging ? '#1976d2' : '#bdbdbd')};
+  border-radius: 12px;
+  padding: 40px 24px;
+  text-align: center;
+  cursor: ${({ isDisabled }) => (isDisabled ? 'not-allowed' : 'pointer')};
+  background-color: ${({ isDragging }) => (isDragging ? '#e3f2fd' : '#fafafa')};
+  transition: border-color 0.15s, background-color 0.15s;
+  margin-bottom: 16px;
+`
 
 interface Props {
   onFile: (file: File) => void
@@ -31,21 +50,13 @@ export function AudioUploader({ onFile, disabled }: Props) {
   }
 
   return (
-    <div
+    <DropZone
       onClick={() => !disabled && inputRef.current?.click()}
       onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragging(true) }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
-      style={{
-        border: `2px dashed ${dragging ? '#3b82f6' : '#d1d5db'}`,
-        borderRadius: '10px',
-        padding: '40px 24px',
-        textAlign: 'center',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        backgroundColor: dragging ? '#eff6ff' : '#f9fafb',
-        transition: 'border-color 0.15s, background-color 0.15s',
-        marginBottom: '16px',
-      }}
+      isDragging={dragging}
+      isDisabled={!!disabled}
     >
       <input
         ref={inputRef}
@@ -55,21 +66,21 @@ export function AudioUploader({ onFile, disabled }: Props) {
         onChange={handleChange}
         disabled={disabled}
       />
-      <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🎵</div>
+      <AudioFile sx={{ fontSize: 48, color: 'action.active', mb: 1 }} />
       {selected ? (
-        <p style={{ fontSize: '0.9rem', color: '#374151', margin: 0 }}>
-          <strong>{selected}</strong>
-        </p>
+        <Typography variant="body2" fontWeight={600}>
+          {selected}
+        </Typography>
       ) : (
         <>
-          <p style={{ margin: '0 0 4px', fontWeight: 600, color: '#374151' }}>
+          <Typography fontWeight={600} color="text.primary">
             Drop an audio file here or click to browse
-          </p>
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280' }}>
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
             Supported: m4a, wav, mp3, ogg, flac, webm, mp4, aac
-          </p>
+          </Typography>
         </>
       )}
-    </div>
+    </DropZone>
   )
 }
