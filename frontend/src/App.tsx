@@ -100,11 +100,11 @@ export default function App() {
           <ErrorBanner message={errorMsg} onDismiss={handleReset} />
         )}
 
-        {phase === 'done' && job && (
+        {(phase === 'done' || phase === 'polling') && job && job.transcript && (
           <TranscriptionResult job={job} />
         )}
 
-        {(phase === 'polling') && (
+        {phase === 'polling' && job && !job.transcript && (
           <p style={{ textAlign: 'center', color: '#6b7280', marginTop: '20px', fontSize: '0.9rem' }}>
             Transcribing audio... this may take a moment.
           </p>

@@ -1,8 +1,10 @@
 import asyncio
+import threading
 from typing import Dict, Any
 from app.services.base_service import AudioProcessingService
 
 _model_cache: Dict[str, Any] = {}
+PARAGRAPH_PAUSE_SECONDS = 1.5
 
 
 def _load_model(model_name: str):
@@ -12,36 +14,50 @@ def _load_model(model_name: str):
     return _model_cache[model_name]
 
 
-PARAGRAPH_PAUSE_SECONDS = 1.5
-
-
-def _transcribe(file_path: str, model_name: str) -> dict:
-    model = _load_model(model_name)
-    segments, info = model.transcribe(file_path)
-    segments = list(segments)
-
-    parts: list[str] = []
-    for i, seg in enumerate(segments):
-        text = seg.text.strip()
-        if not text:
-            continue
-        if parts and i > 0:
-            gap = seg.start - segments[i - 1].end
-            separator = "\n\n" if gap >= PARAGRAPH_PAUSE_SECONDS else " "
-            parts.append(separator)
-        parts.append(text)
-
-    return {
-        "transcript": "".join(parts),
-        "duration_seconds": info.duration,
-    }
+def transcribe_to_queue(
+    file_path: str,
+    model_name: str,
+    queue: asyncio.Queue,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Run transcription synchronously in a thread, pushing events into an asyncio queue."""
+    try:
+        model = _load_model(model_name)
+        segments, info = model.transcribe(file_path)
+        prev_end: float | None = None
+        for seg in segments:
+            text = seg.text.strip()
+            if text:
+                gap = seg.start - prev_end if prev_end is not None else None
+                loop.call_soon_threadsafe(queue.put_nowait, ("segment", text, gap, seg.end))
+                prev_end = seg.end
+        loop.call_soon_threadsafe(queue.put_nowait, ("done", info.duration))
+    except Exception as exc:
+        loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
 
 
 class WhisperService(AudioProcessingService):
     async def process(self, file_path: str, **kwargs) -> dict:
         model_name = kwargs.get("model", "base")
-        result = await asyncio.to_thread(_transcribe, file_path, model_name)
-        return result
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        threading.Thread(
+            target=transcribe_to_queue,
+            args=(file_path, model_name, queue, loop),
+            daemon=True,
+        ).start()
+        parts: list[str] = []
+        while True:
+            item = await queue.get()
+            if item[0] == "segment":
+                _, text, gap, _ = item
+                if parts:
+                    parts.append("\n\n" if gap is not None and gap >= PARAGRAPH_PAUSE_SECONDS else " ")
+                parts.append(text)
+            elif item[0] == "done":
+                return {"transcript": "".join(parts), "duration_seconds": item[1]}
+            else:
+                raise Exception(item[1])
 
 
 whisper_service = WhisperService()

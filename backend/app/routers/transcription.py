@@ -1,4 +1,6 @@
+import asyncio
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.models.job import JobResult, JobStatus
 from app.storage.job_store import job_store
-from app.services.whisper_service import whisper_service
+from app.services.whisper_service import transcribe_to_queue, PARAGRAPH_PAUSE_SECONDS
 
 router = APIRouter()
 
@@ -25,18 +27,41 @@ async def _run_transcription(job_id: str, file_path: str, model: str):
     await job_store.update(job)
 
     try:
-        result = await whisper_service.process(file_path, model=model)
-        job.status = JobStatus.DONE
-        job.transcript = result["transcript"]
-        job.duration_seconds = result.get("duration_seconds")
-        job.model_used = model
-        job.completed_at = datetime.now(timezone.utc)
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        threading.Thread(
+            target=transcribe_to_queue,
+            args=(file_path, model, queue, loop),
+            daemon=True,
+        ).start()
+
+        parts: list[str] = []
+        while True:
+            item = await queue.get()
+            if item[0] == "segment":
+                _, text, gap, _ = item
+                if parts:
+                    parts.append("\n\n" if gap is not None and gap >= PARAGRAPH_PAUSE_SECONDS else " ")
+                parts.append(text)
+                job.transcript = "".join(parts)
+                await job_store.update(job)
+            elif item[0] == "done":
+                job.status = JobStatus.DONE
+                job.duration_seconds = item[1]
+                job.model_used = model
+                job.completed_at = datetime.now(timezone.utc)
+                job.transcript = "".join(parts)
+                await job_store.update(job)
+                break
+            else:
+                raise Exception(item[1])
+
     except Exception as e:
         job.status = JobStatus.ERROR
         job.error = str(e)
         job.completed_at = datetime.now(timezone.utc)
-    finally:
         await job_store.update(job)
+    finally:
         try:
             os.remove(file_path)
         except OSError:
